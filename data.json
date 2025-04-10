@@ -1,0 +1,38 @@
+[
+  {
+    "id": "1744318526198",
+    "title": "Test",
+    "content": "C'est ma première note\n",
+    "position": {
+      "x": 151,
+      "y": 201
+    },
+    "color": "#ffeb3b",
+    "createdAt": 1744318526198,
+    "zIndex": 16
+  },
+  {
+    "id": "1744318564429",
+    "title": "Note 2",
+    "content": "Et puis une autre",
+    "position": {
+      "x": 401,
+      "y": 286
+    },
+    "color": "#ffeb3b",
+    "createdAt": 1744318564429,
+    "zIndex": 27
+  },
+  {
+    "id": "1744318872145",
+    "title": "Nouvelle note",
+    "content": "Contenu de la note",
+    "position": {
+      "x": -56,
+      "y": 74
+    },
+    "color": "#ffeb3b",
+    "createdAt": 1744318872145,
+    "zIndex": 31
+  }
+]

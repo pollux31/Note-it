@@ -58,12 +58,12 @@
   padding: 0;
   border-radius: 5px;
   box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);
-  z-index: 1;
-  transition: box-shadow 0.3s ease;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-sizing: border-box; /* S'assurer que padding et border sont inclus dans les dimensions */
+  z-index: 10;
+  resize: none; /* Désactiver le redimensionnement natif */
+  transition: box-shadow 0.3s ease;
 }
 
 .sticky-note:hover {
@@ -88,8 +88,33 @@
   min-height: 22px;
 }
 
+/* Poignée de déplacement */
+.note-drag-handle {
+  width: 10px;
+  height: 20px;
+  cursor: move;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 5px;
+  border-radius: 2px;
+}
+
+.note-drag-handle:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.note-drag-handle::before {
+  content: "⋮";
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
 /* Titre de la note */
 .note-title {
+  display: flex;
+  align-items: center;
   flex-grow: 1;
   margin-right: 5px;
   font-weight: 500;

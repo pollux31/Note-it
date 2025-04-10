@@ -29,8 +29,6 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
 var DEFAULT_SETTINGS = {
-  storageFolder: "/",
-  storageFileName: "note-it-storage.md",
   defaultColor: "#ffeb3b"
 };
 var VIEW_TYPE_NOTE_IT = "note-it-view";
@@ -102,23 +100,10 @@ var NoteItPlugin = class extends import_obsidian.Plugin {
   }
   async saveNotes() {
     try {
-      const storagePath = this.settings.storageFolder === "/" ? this.settings.storageFileName : `${this.settings.storageFolder}/${this.settings.storageFileName}`;
-      const storageFile = this.app.vault.getAbstractFileByPath(storagePath);
-      const content = `---
-notes: ${JSON.stringify(this.notes)}
----
-# Notes Post-it
-Ce fichier contient les donn\xE9es de vos notes post-it. Ne pas modifier manuellement.
-`;
-      if (storageFile instanceof import_obsidian.TFile) {
-        await this.app.vault.modify(storageFile, content);
-      } else {
-        const folder = this.app.vault.getAbstractFileByPath(this.settings.storageFolder);
-        if (this.settings.storageFolder !== "/" && !(folder instanceof import_obsidian.TFolder)) {
-          await this.app.vault.createFolder(this.settings.storageFolder);
-        }
-        await this.app.vault.create(storagePath, content);
-      }
+      const formattedNotes = JSON.stringify(this.notes, null, 2);
+      const adapter = this.app.vault.adapter;
+      const dataPath = `${this.app.vault.configDir}/plugins/Note-it/data.json`;
+      await adapter.write(dataPath, formattedNotes);
     } catch (error) {
       new import_obsidian.Notice(`Erreur lors de la sauvegarde des notes: ${error}`);
       console.error("Erreur lors de la sauvegarde des notes:", error);
@@ -126,29 +111,18 @@ Ce fichier contient les donn\xE9es de vos notes post-it. Ne pas modifier manuell
   }
   async loadNotes() {
     try {
-      const storagePath = this.settings.storageFolder === "/" ? this.settings.storageFileName : `${this.settings.storageFolder}/${this.settings.storageFileName}`;
-      const storageFile = this.app.vault.getAbstractFileByPath(storagePath);
-      if (storageFile instanceof import_obsidian.TFile) {
-        const content = await this.app.vault.read(storageFile);
-        const yamlMatch = content.match(/^---\n([\s\S]*?)\n---/);
-        if (yamlMatch && yamlMatch[1]) {
-          try {
-            const yamlContent = yamlMatch[1];
-            const notesMatch = yamlContent.match(/notes: (.*)/);
-            if (notesMatch && notesMatch[1]) {
-              this.notes = JSON.parse(notesMatch[1]);
-              this.currentMaxZIndex = 10;
-              this.notes.forEach((note) => {
-                if (note.zIndex && note.zIndex > this.currentMaxZIndex) {
-                  this.currentMaxZIndex = note.zIndex;
-                }
-              });
-              this.refreshView();
-            }
-          } catch (e) {
-            console.error("Erreur lors du parsing des notes:", e);
+      const adapter = this.app.vault.adapter;
+      const dataPath = `${this.app.vault.configDir}/plugins/Note-it/data.json`;
+      if (await adapter.exists(dataPath)) {
+        const content = await adapter.read(dataPath);
+        this.notes = JSON.parse(content);
+        this.currentMaxZIndex = 10;
+        this.notes.forEach((note) => {
+          if (note.zIndex && note.zIndex > this.currentMaxZIndex) {
+            this.currentMaxZIndex = note.zIndex;
           }
-        }
+        });
+        this.refreshView();
       }
     } catch (error) {
       console.log("Aucun fichier de stockage trouv\xE9 ou erreur de lecture:", error);
@@ -288,6 +262,7 @@ var NoteItView = class extends import_obsidian.ItemView {
     });
     const headerEl = noteEl.createDiv({ cls: "note-header" });
     const titleEl = headerEl.createDiv({ cls: "note-title" });
+    const dragHandleEl = titleEl.createDiv({ cls: "note-drag-handle" });
     const titleInput = titleEl.createEl("input", {
       type: "text",
       attr: {
@@ -354,7 +329,7 @@ var NoteItView = class extends import_obsidian.ItemView {
     textArea.addEventListener("blur", () => {
       this.toggleEditMode(noteEl, note, false);
     });
-    this.makeNoteDraggable(noteEl, note);
+    this.makeNoteDraggable(dragHandleEl, noteEl, note);
     this.makeNoteResizable(noteEl, note);
   }
   toggleEditMode(noteEl, note, enterEditMode) {
@@ -416,38 +391,46 @@ var NoteItView = class extends import_obsidian.ItemView {
     html = html.replace(/```([^`]*?)```/g, "<pre><code>$1</code></pre>").replace(/`([^`]*?)`/g, "<code>$1</code>");
     return html;
   }
-  makeNoteDraggable(noteEl, note) {
+  makeNoteDraggable(dragHandleEl, noteEl, note) {
     let isDragging = false;
-    let offsetX = 0;
-    let offsetY = 0;
-    const header = noteEl.querySelector(".note-header");
-    header.addEventListener("mousedown", (e) => {
-      if (e.target.tagName === "BUTTON" || e.target.tagName === "INPUT") {
+    let startX = 0;
+    let startY = 0;
+    let startLeft = 0;
+    let startTop = 0;
+    const startDrag = (e) => {
+      if (e.target instanceof HTMLButtonElement || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
         return;
       }
       isDragging = true;
-      offsetX = e.clientX - note.position.x;
-      offsetY = e.clientY - note.position.y;
-      noteEl.addClass("dragging");
+      startX = e.clientX;
+      startY = e.clientY;
+      startLeft = parseInt(noteEl.style.left) || 0;
+      startTop = parseInt(noteEl.style.top) || 0;
+      document.addEventListener("mousemove", drag);
+      document.addEventListener("mouseup", stopDrag);
       e.preventDefault();
-    });
-    document.addEventListener("mousemove", (e) => {
+    };
+    const drag = (e) => {
       if (!isDragging)
         return;
-      const newX = e.clientX - offsetX;
-      const newY = e.clientY - offsetY;
-      noteEl.style.left = `${newX}px`;
-      noteEl.style.top = `${newY}px`;
-    });
-    document.addEventListener("mouseup", (e) => {
+      const deltaX = e.clientX - startX;
+      const deltaY = e.clientY - startY;
+      const newLeft = startLeft + deltaX;
+      const newTop = startTop + deltaY;
+      noteEl.style.left = `${newLeft}px`;
+      noteEl.style.top = `${newTop}px`;
+    };
+    const stopDrag = () => {
       if (!isDragging)
         return;
       isDragging = false;
-      noteEl.removeClass("dragging");
-      const newX = e.clientX - offsetX;
-      const newY = e.clientY - offsetY;
-      this.plugin.updateNotePosition(note.id, newX, newY);
-    });
+      document.removeEventListener("mousemove", drag);
+      document.removeEventListener("mouseup", stopDrag);
+      const newLeft = parseInt(noteEl.style.left);
+      const newTop = parseInt(noteEl.style.top);
+      this.plugin.updateNotePosition(note.id, newLeft, newTop);
+    };
+    dragHandleEl.addEventListener("mousedown", startDrag);
   }
   makeNoteResizable(noteEl, note) {
     const resizeHandles = ["se", "sw", "ne", "nw", "n", "s", "e", "w"];
@@ -604,15 +587,6 @@ var NoteItSettingTab = class extends import_obsidian.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("h2", { text: "Param\xE8tres de Note-it" });
-    new import_obsidian.Setting(containerEl).setName("Dossier de stockage").setDesc("Chemin du dossier pour stocker les notes post-it (ex: dossier/sous-dossier ou / pour la racine)").addText((text) => text.setPlaceholder("/").setValue(this.plugin.settings.storageFolder).onChange(async (value) => {
-      const normalizedPath = value.endsWith("/") && value !== "/" ? value.slice(0, -1) : value;
-      this.plugin.settings.storageFolder = normalizedPath;
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian.Setting(containerEl).setName("Nom du fichier de stockage").setDesc("Nom du fichier pour stocker les notes post-it").addText((text) => text.setPlaceholder("note-it-storage.md").setValue(this.plugin.settings.storageFileName).onChange(async (value) => {
-      this.plugin.settings.storageFileName = value;
-      await this.plugin.saveSettings();
-    }));
     new import_obsidian.Setting(containerEl).setName("Couleur par d\xE9faut").setDesc("Couleur par d\xE9faut pour les nouvelles notes").addColorPicker((color) => color.setValue(this.plugin.settings.defaultColor).onChange(async (value) => {
       this.plugin.settings.defaultColor = value;
       await this.plugin.saveSettings();

@@ -16,14 +16,10 @@ interface StickyNote {
 
 // Interface pour les paramètres du plugin
 interface NoteItSettings {
-	storageFolder: string;
-	storageFileName: string;
 	defaultColor: string;
 }
 
 const DEFAULT_SETTINGS: NoteItSettings = {
-	storageFolder: '/',
-	storageFileName: 'note-it-storage.md',
 	defaultColor: '#ffeb3b'
 }
 
@@ -125,33 +121,17 @@ export default class NoteItPlugin extends Plugin {
 
 	async saveNotes() {
 		try {
-			// Construire le chemin complet du fichier de stockage
-			const storagePath = this.settings.storageFolder === '/' 
-				? this.settings.storageFileName 
-				: `${this.settings.storageFolder}/${this.settings.storageFileName}`;
+			// Formater les notes en JSON avec indentation pour une meilleure lisibilité
+			const formattedNotes = JSON.stringify(this.notes, null, 2);
 			
-			// Vérifier si le fichier de stockage existe
-			const storageFile = this.app.vault.getAbstractFileByPath(storagePath);
+			// Utiliser l'API d'Obsidian pour accéder au système de fichiers
+			const adapter = this.app.vault.adapter;
 			
-			// Format de stockage: YAML front matter pour les métadonnées
-			const content = `---
-notes: ${JSON.stringify(this.notes)}
----
-# Notes Post-it
-Ce fichier contient les données de vos notes post-it. Ne pas modifier manuellement.
-`;
-
-			if (storageFile instanceof TFile) {
-				await this.app.vault.modify(storageFile, content);
-			} else {
-				// Vérifier si le dossier existe
-				const folder = this.app.vault.getAbstractFileByPath(this.settings.storageFolder);
-				if (this.settings.storageFolder !== '/' && !(folder instanceof TFolder)) {
-					// Créer le dossier s'il n'existe pas
-					await this.app.vault.createFolder(this.settings.storageFolder);
-				}
-				await this.app.vault.create(storagePath, content);
-			}
+			// Chemin du fichier data.json dans le répertoire du plugin
+			const dataPath = `${this.app.vault.configDir}/plugins/Note-it/data.json`;
+			
+			// Écrire les données dans le fichier
+			await adapter.write(dataPath, formattedNotes);
 		} catch (error) {
 			new Notice(`Erreur lors de la sauvegarde des notes: ${error}`);
 			console.error('Erreur lors de la sauvegarde des notes:', error);
@@ -160,41 +140,29 @@ Ce fichier contient les données de vos notes post-it. Ne pas modifier manuellem
 
 	async loadNotes() {
 		try {
-			// Construire le chemin complet du fichier de stockage
-			const storagePath = this.settings.storageFolder === '/' 
-				? this.settings.storageFileName 
-				: `${this.settings.storageFolder}/${this.settings.storageFileName}`;
+			// Utiliser l'API d'Obsidian pour accéder au système de fichiers
+			const adapter = this.app.vault.adapter;
 			
-			const storageFile = this.app.vault.getAbstractFileByPath(storagePath);
+			// Chemin du fichier data.json dans le répertoire du plugin
+			const dataPath = `${this.app.vault.configDir}/plugins/Note-it/data.json`;
 			
-			if (storageFile instanceof TFile) {
-				const content = await this.app.vault.read(storageFile);
+			// Vérifier si le fichier existe
+			if (await adapter.exists(dataPath)) {
+				// Lire le contenu du fichier
+				const content = await adapter.read(dataPath);
 				
-				// Extraire les données YAML
-				const yamlMatch = content.match(/^---\n([\s\S]*?)\n---/);
+				// Parser le JSON
+				this.notes = JSON.parse(content);
 				
-				if (yamlMatch && yamlMatch[1]) {
-					try {
-						const yamlContent = yamlMatch[1];
-						const notesMatch = yamlContent.match(/notes: (.*)/);
-						
-						if (notesMatch && notesMatch[1]) {
-							this.notes = JSON.parse(notesMatch[1]);
-							
-							// Déterminer le z-index maximum actuel
-							this.currentMaxZIndex = 10; // Valeur par défaut
-							this.notes.forEach(note => {
-								if (note.zIndex && note.zIndex > this.currentMaxZIndex) {
-									this.currentMaxZIndex = note.zIndex;
-								}
-							});
-							
-							this.refreshView();
-						}
-					} catch (e) {
-						console.error('Erreur lors du parsing des notes:', e);
+				// Déterminer le z-index maximum actuel
+				this.currentMaxZIndex = 10; // Valeur par défaut
+				this.notes.forEach(note => {
+					if (note.zIndex && note.zIndex > this.currentMaxZIndex) {
+						this.currentMaxZIndex = note.zIndex;
 					}
-				}
+				});
+				
+				this.refreshView();
 			}
 		} catch (error) {
 			console.log('Aucun fichier de stockage trouvé ou erreur de lecture:', error);
@@ -388,6 +356,10 @@ class NoteItView extends ItemView {
 		
 		// Titre de la note (maintenant dans l'en-tête)
 		const titleEl = headerEl.createDiv({ cls: 'note-title' });
+		
+		// Poignée de déplacement à gauche du titre
+		const dragHandleEl = titleEl.createDiv({ cls: 'note-drag-handle' });
+		
 		const titleInput = titleEl.createEl('input', { 
 			type: 'text',
 			attr: {
@@ -486,13 +458,13 @@ class NoteItView extends ItemView {
 			this.toggleEditMode(noteEl, note, false);
 		});
 
-		// Rendre la note déplaçable
-		this.makeNoteDraggable(noteEl, note);
+		// Rendre la note déplaçable uniquement par la poignée
+		this.makeNoteDraggable(dragHandleEl, noteEl, note);
 		
 		// Ajouter les poignées de redimensionnement
 		this.makeNoteResizable(noteEl, note);
 	}
-	
+
 	/**
 	 * Bascule entre le mode édition et le mode affichage
 	 */
@@ -622,52 +594,70 @@ class NoteItView extends ItemView {
 		return html;
 	}
 
-	makeNoteDraggable(noteEl: HTMLElement, note: StickyNote) {
+	makeNoteDraggable(dragHandleEl: HTMLElement, noteEl: HTMLElement, note: StickyNote) {
 		let isDragging = false;
-		let offsetX = 0;
-		let offsetY = 0;
-
-		// Utiliser l'en-tête comme zone de déplacement
-		const header = noteEl.querySelector('.note-header') as HTMLElement;
-
-		header.addEventListener('mousedown', (e) => {
-			// Ignorer si on clique sur un bouton ou le champ de titre
-			if ((e.target as HTMLElement).tagName === 'BUTTON' || 
-				(e.target as HTMLElement).tagName === 'INPUT') {
+		let startX = 0;
+		let startY = 0;
+		let startLeft = 0;
+		let startTop = 0;
+		
+		// Gestionnaire pour commencer le déplacement
+		const startDrag = (e: MouseEvent) => {
+			// Ignorer les clics sur les boutons ou les champs de saisie
+			if (
+				e.target instanceof HTMLButtonElement ||
+				e.target instanceof HTMLInputElement ||
+				e.target instanceof HTMLTextAreaElement
+			) {
 				return;
 			}
 			
 			isDragging = true;
-			offsetX = e.clientX - note.position.x;
-			offsetY = e.clientY - note.position.y;
+			startX = e.clientX;
+			startY = e.clientY;
+			startLeft = parseInt(noteEl.style.left) || 0;
+			startTop = parseInt(noteEl.style.top) || 0;
 			
-			// Ajouter la classe de déplacement
-			noteEl.addClass('dragging');
+			// Ajouter les gestionnaires d'événements pour le déplacement
+			document.addEventListener('mousemove', drag);
+			document.addEventListener('mouseup', stopDrag);
 			
+			// Empêcher la sélection de texte pendant le déplacement
 			e.preventDefault();
-		});
-
-		document.addEventListener('mousemove', (e) => {
+		};
+		
+		// Gestionnaire pour le déplacement
+		const drag = (e: MouseEvent) => {
 			if (!isDragging) return;
 			
-			const newX = e.clientX - offsetX;
-			const newY = e.clientY - offsetY;
+			const deltaX = e.clientX - startX;
+			const deltaY = e.clientY - startY;
 			
-			noteEl.style.left = `${newX}px`;
-			noteEl.style.top = `${newY}px`;
-		});
-
-		document.addEventListener('mouseup', (e) => {
+			const newLeft = startLeft + deltaX;
+			const newTop = startTop + deltaY;
+			
+			noteEl.style.left = `${newLeft}px`;
+			noteEl.style.top = `${newTop}px`;
+		};
+		
+		// Gestionnaire pour arrêter le déplacement
+		const stopDrag = () => {
 			if (!isDragging) return;
 			
 			isDragging = false;
-			noteEl.removeClass('dragging');
 			
-			const newX = e.clientX - offsetX;
-			const newY = e.clientY - offsetY;
+			// Supprimer les gestionnaires d'événements
+			document.removeEventListener('mousemove', drag);
+			document.removeEventListener('mouseup', stopDrag);
 			
-			(this.plugin as NoteItPlugin).updateNotePosition(note.id, newX, newY);
-		});
+			// Mettre à jour la position dans les données
+			const newLeft = parseInt(noteEl.style.left);
+			const newTop = parseInt(noteEl.style.top);
+			(this.plugin as NoteItPlugin).updateNotePosition(note.id, newLeft, newTop);
+		};
+		
+		// Attacher le gestionnaire d'événement mousedown à la poignée de déplacement
+		dragHandleEl.addEventListener('mousedown', startDrag);
 	}
 	
 	makeNoteResizable(noteEl: HTMLElement, note: StickyNote) {
@@ -882,32 +872,6 @@ class NoteItSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		containerEl.createEl('h2', { text: 'Paramètres de Note-it' });
-
-		new Setting(containerEl)
-			.setName('Dossier de stockage')
-			.setDesc('Chemin du dossier pour stocker les notes post-it (ex: dossier/sous-dossier ou / pour la racine)')
-			.addText(text => text
-				.setPlaceholder('/')
-				.setValue(this.plugin.settings.storageFolder)
-				.onChange(async (value) => {
-					// Normaliser le chemin (supprimer les / en fin de chaîne)
-					const normalizedPath = value.endsWith('/') && value !== '/' 
-						? value.slice(0, -1) 
-						: value;
-					this.plugin.settings.storageFolder = normalizedPath;
-					await this.plugin.saveSettings();
-				}));
-
-		new Setting(containerEl)
-			.setName('Nom du fichier de stockage')
-			.setDesc('Nom du fichier pour stocker les notes post-it')
-			.addText(text => text
-				.setPlaceholder('note-it-storage.md')
-				.setValue(this.plugin.settings.storageFileName)
-				.onChange(async (value) => {
-					this.plugin.settings.storageFileName = value;
-					await this.plugin.saveSettings();
-				}));
 
 		new Setting(containerEl)
 			.setName('Couleur par défaut')
