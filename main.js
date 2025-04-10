@@ -71,32 +71,34 @@ var NoteItPlugin = class extends import_obsidian.Plugin {
     await this.saveData(this.settings);
   }
   async createNewNote() {
-    const id = Date.now().toString();
-    const newNote = {
+    const id = `note-${Date.now()}`;
+    const note = {
       id,
       title: "Nouvelle note",
-      content: "Contenu de la note",
+      content: "",
       position: {
         x: Math.floor(Math.random() * 300),
         y: Math.floor(Math.random() * 300)
       },
+      dimensions: { width: 200, height: 200 },
       color: this.settings.defaultColor,
       createdAt: Date.now(),
-      zIndex: this.currentMaxZIndex
+      zIndex: ++this.currentMaxZIndex
     };
-    this.notes.push(newNote);
-    this.currentMaxZIndex++;
+    this.notes.push(note);
     await this.saveNotes();
     this.refreshView();
     setTimeout(() => {
       const noteEl = document.querySelector(`.sticky-note[data-id="${id}"]`);
       if (noteEl) {
-        noteEl.style.width = "200px";
-        noteEl.style.height = "200px";
-        localStorage.setItem(`note-it-size-${id}`, JSON.stringify({ width: 200, height: 200 }));
+        const titleInput = noteEl.querySelector(".note-title input");
+        if (titleInput) {
+          titleInput.focus();
+          titleInput.select();
+        }
       }
     }, 50);
-    new import_obsidian.Notice("Nouvelle note cr\xE9\xE9e!");
+    return id;
   }
   async saveNotes() {
     try {
@@ -116,17 +118,27 @@ var NoteItPlugin = class extends import_obsidian.Plugin {
       if (await adapter.exists(dataPath)) {
         const content = await adapter.read(dataPath);
         this.notes = JSON.parse(content);
-        this.currentMaxZIndex = 10;
-        this.notes.forEach((note) => {
-          if (note.zIndex && note.zIndex > this.currentMaxZIndex) {
-            this.currentMaxZIndex = note.zIndex;
-          }
-        });
+        this.normalizeZIndices();
+        await this.saveNotes();
         this.refreshView();
       }
     } catch (error) {
       console.log("Aucun fichier de stockage trouv\xE9 ou erreur de lecture:", error);
     }
+  }
+  normalizeZIndices() {
+    const sortedNotes = [...this.notes].sort((a, b) => {
+      const zIndexA = a.zIndex || 0;
+      const zIndexB = b.zIndex || 0;
+      return zIndexA - zIndexB;
+    });
+    sortedNotes.forEach((note, index) => {
+      const originalNote = this.notes.find((n) => n.id === note.id);
+      if (originalNote) {
+        originalNote.zIndex = index + 1;
+      }
+    });
+    this.currentMaxZIndex = this.notes.length > 0 ? this.notes.length : 0;
   }
   async deleteNote(id) {
     this.notes = this.notes.filter((note) => note.id !== id);
@@ -164,6 +176,13 @@ var NoteItPlugin = class extends import_obsidian.Plugin {
       if (noteEl) {
         noteEl.style.backgroundColor = color;
       }
+    }
+  }
+  async updateNoteDimensions(id, width, height) {
+    const noteIndex = this.notes.findIndex((note) => note.id === id);
+    if (noteIndex >= 0) {
+      this.notes[noteIndex].dimensions = { width, height };
+      await this.saveNotes();
     }
   }
   async bringNoteToFront(id) {
@@ -255,6 +274,13 @@ var NoteItView = class extends import_obsidian.ItemView {
     noteEl.style.backgroundColor = note.color;
     if (note.zIndex) {
       noteEl.style.zIndex = note.zIndex.toString();
+    }
+    if (note.dimensions) {
+      noteEl.style.width = `${note.dimensions.width}px`;
+      noteEl.style.height = `${note.dimensions.height}px`;
+    } else {
+      noteEl.style.width = "200px";
+      noteEl.style.height = "200px";
     }
     noteEl.setAttribute("data-id", note.id);
     noteEl.addEventListener("mousedown", () => {
@@ -498,18 +524,12 @@ var NoteItView = class extends import_obsidian.ItemView {
         this.plugin.updateNotePosition(note.id, newLeft, newTop);
         const width = noteEl.offsetWidth;
         const height = noteEl.offsetHeight;
-        localStorage.setItem(`note-it-size-${note.id}`, JSON.stringify({ width, height }));
+        this.plugin.updateNoteDimensions(note.id, width, height);
       };
     });
-    const savedSize = localStorage.getItem(`note-it-size-${note.id}`);
-    if (savedSize) {
-      try {
-        const { width, height } = JSON.parse(savedSize);
-        noteEl.style.width = `${width}px`;
-        noteEl.style.height = `${height}px`;
-      } catch (e) {
-        console.error("Erreur lors de la restauration des dimensions:", e);
-      }
+    if (note.dimensions) {
+      noteEl.style.width = `${note.dimensions.width}px`;
+      noteEl.style.height = `${note.dimensions.height}px`;
     }
   }
   onEscapeKey() {

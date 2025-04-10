@@ -5,10 +5,8 @@ interface StickyNote {
 	id: string;
 	title: string;
 	content: string;
-	position: {
-		x: number;
-		y: number;
-	};
+	position: { x: number; y: number; };
+	dimensions?: { width: number; height: number }; // Dimensions du post-it
 	color: string;
 	createdAt: number;
 	zIndex?: number; // Nouvel attribut pour gérer l'ordre d'affichage
@@ -84,39 +82,40 @@ export default class NoteItPlugin extends Plugin {
 	}
 
 	async createNewNote() {
-		const id = Date.now().toString();
-		const newNote: StickyNote = {
-			id,
+		const id = `note-${Date.now()}`;
+		const note: StickyNote = {
+			id: id,
 			title: 'Nouvelle note',
-			content: 'Contenu de la note',
+			content: '', // Contenu vide par défaut
 			position: {
 				x: Math.floor(Math.random() * 300),
 				y: Math.floor(Math.random() * 300)
 			},
+			dimensions: { width: 200, height: 200 }, // Dimensions par défaut
 			color: this.settings.defaultColor,
 			createdAt: Date.now(),
-			zIndex: this.currentMaxZIndex // Assigner le z-index le plus élevé à la nouvelle note
+			zIndex: ++this.currentMaxZIndex
 		};
-
-		this.notes.push(newNote);
-		this.currentMaxZIndex++; // Incrémenter le z-index maximum
+		
+		this.notes.push(note);
 		await this.saveNotes();
 		this.refreshView();
 		
-		// Définir les dimensions initiales du post-it
+		// Rafraîchir la vue après un court délai pour permettre la sauvegarde
 		setTimeout(() => {
+			// Trouver l'élément de note nouvellement créé
 			const noteEl = document.querySelector(`.sticky-note[data-id="${id}"]`) as HTMLElement;
 			if (noteEl) {
-				// Appliquer des dimensions explicites
-				noteEl.style.width = '200px';
-				noteEl.style.height = '200px';
-				
-				// Stocker les dimensions dans le localStorage
-				localStorage.setItem(`note-it-size-${id}`, JSON.stringify({ width: 200, height: 200 }));
+				// Mettre le focus sur le titre et sélectionner tout le texte
+				const titleInput = noteEl.querySelector('.note-title input') as HTMLInputElement;
+				if (titleInput) {
+					titleInput.focus();
+					titleInput.select(); // Sélectionne tout le texte
+				}
 			}
 		}, 50);
-
-		new Notice('Nouvelle note créée!');
+		
+		return id;
 	}
 
 	async saveNotes() {
@@ -154,13 +153,11 @@ export default class NoteItPlugin extends Plugin {
 				// Parser le JSON
 				this.notes = JSON.parse(content);
 				
-				// Déterminer le z-index maximum actuel
-				this.currentMaxZIndex = 10; // Valeur par défaut
-				this.notes.forEach(note => {
-					if (note.zIndex && note.zIndex > this.currentMaxZIndex) {
-						this.currentMaxZIndex = note.zIndex;
-					}
-				});
+				// Recalculer les zIndex en respectant l'ordre mais en commençant à 1
+				this.normalizeZIndices();
+				
+				// Sauvegarder les notes avec les nouveaux zIndex
+				await this.saveNotes();
 				
 				this.refreshView();
 			}
@@ -168,6 +165,29 @@ export default class NoteItPlugin extends Plugin {
 			console.log('Aucun fichier de stockage trouvé ou erreur de lecture:', error);
 			// Pas d'erreur à afficher car c'est probablement la première utilisation
 		}
+	}
+
+	/**
+	 * Normalise les zIndex des notes en respectant l'ordre mais en commençant à 1
+	 */
+	normalizeZIndices() {
+		// Trier les notes par zIndex croissant
+		const sortedNotes = [...this.notes].sort((a, b) => {
+			const zIndexA = a.zIndex || 0;
+			const zIndexB = b.zIndex || 0;
+			return zIndexA - zIndexB;
+		});
+		
+		// Réattribuer les zIndex en commençant à 1 avec un incrément de 1
+		sortedNotes.forEach((note, index) => {
+			const originalNote = this.notes.find(n => n.id === note.id);
+			if (originalNote) {
+				originalNote.zIndex = index + 1;
+			}
+		});
+		
+		// Mettre à jour le zIndex maximum
+		this.currentMaxZIndex = this.notes.length > 0 ? this.notes.length : 0;
 	}
 
 	async deleteNote(id: string) {
@@ -212,6 +232,14 @@ export default class NoteItPlugin extends Plugin {
 			if (noteEl) {
 				noteEl.style.backgroundColor = color;
 			}
+		}
+	}
+
+	async updateNoteDimensions(id: string, width: number, height: number) {
+		const noteIndex = this.notes.findIndex(note => note.id === id);
+		if (noteIndex >= 0) {
+			this.notes[noteIndex].dimensions = { width, height };
+			await this.saveNotes();
 		}
 	}
 
@@ -344,6 +372,17 @@ class NoteItView extends ItemView {
 		if (note.zIndex) {
 			noteEl.style.zIndex = note.zIndex.toString();
 		}
+		
+		// Appliquer les dimensions si elles existent
+		if (note.dimensions) {
+			noteEl.style.width = `${note.dimensions.width}px`;
+			noteEl.style.height = `${note.dimensions.height}px`;
+		} else {
+			// Dimensions par défaut
+			noteEl.style.width = '200px';
+			noteEl.style.height = '200px';
+		}
+		
 		noteEl.setAttribute('data-id', note.id);
 		
 		// Ajouter un gestionnaire de clic pour mettre la note au premier plan
@@ -744,23 +783,17 @@ class NoteItView extends ItemView {
 				const newTop = parseInt(noteEl.style.top);
 				(this.plugin as NoteItPlugin).updateNotePosition(note.id, newLeft, newTop);
 				
-				// Stocker les dimensions dans le localStorage
+				// Stocker les dimensions dans l'objet note et sauvegarder
 				const width = noteEl.offsetWidth;
 				const height = noteEl.offsetHeight;
-				localStorage.setItem(`note-it-size-${note.id}`, JSON.stringify({ width, height }));
+				(this.plugin as NoteItPlugin).updateNoteDimensions(note.id, width, height);
 			};
 		});
 		
-		// Restaurer les dimensions sauvegardées
-		const savedSize = localStorage.getItem(`note-it-size-${note.id}`);
-		if (savedSize) {
-			try {
-				const { width, height } = JSON.parse(savedSize);
-				noteEl.style.width = `${width}px`;
-				noteEl.style.height = `${height}px`;
-			} catch (e) {
-				console.error('Erreur lors de la restauration des dimensions:', e);
-			}
+		// Appliquer les dimensions sauvegardées si elles existent
+		if (note.dimensions) {
+			noteEl.style.width = `${note.dimensions.width}px`;
+			noteEl.style.height = `${note.dimensions.height}px`;
 		}
 	}
 

@@ -2,37 +2,81 @@
   {
     "id": "1744318526198",
     "title": "Test",
-    "content": "C'est ma première note\n",
+    "content": "## Thierry\nC'est ma première note\n",
     "position": {
-      "x": 151,
+      "x": -114,
       "y": 201
     },
     "color": "#ffeb3b",
     "createdAt": 1744318526198,
-    "zIndex": 32
+    "zIndex": 3,
+    "dimensions": {
+      "width": 200,
+      "height": 236
+    }
   },
   {
     "id": "1744318564429",
     "title": "Note 2",
     "content": "Et puis une autre",
     "position": {
-      "x": 401,
-      "y": 286
+      "x": 290,
+      "y": 186
     },
-    "color": "#ffeb3b",
+    "color": "#4caf50",
     "createdAt": 1744318564429,
-    "zIndex": 27
+    "zIndex": 1,
+    "dimensions": {
+      "width": 200,
+      "height": 72
+    }
   },
   {
     "id": "1744318872145",
     "title": "Nouvelle note",
+    "content": "Contenu de la note\n",
+    "position": {
+      "x": 523,
+      "y": 299
+    },
+    "color": "#2196f3",
+    "createdAt": 1744318872145,
+    "zIndex": 2,
+    "dimensions": {
+      "width": 200,
+      "height": 49
+    }
+  },
+  {
+    "id": "note-1744320943917",
+    "title": "Nouvelle note",
     "content": "Contenu de la note",
     "position": {
-      "x": -56,
-      "y": 74
+      "x": 607,
+      "y": 48
     },
     "color": "#ffeb3b",
-    "createdAt": 1744318872145,
-    "zIndex": 31
+    "createdAt": 1744320943917,
+    "zIndex": 4,
+    "dimensions": {
+      "width": 200,
+      "height": 200
+    }
+  },
+  {
+    "id": "note-1744321164206",
+    "title": "test",
+    "content": "coucou\n",
+    "position": {
+      "x": 139,
+      "y": 27
+    },
+    "dimensions": {
+      "width": 200,
+      "height": 200
+    },
+    "color": "#ffeb3b",
+    "createdAt": 1744321164206,
+    "zIndex": 9
   }
 ]
