@@ -53,8 +53,8 @@
 .sticky-note {
   position: absolute;
   width: 200px;
-  height: 200px; /* Définir une hauteur explicite */
-  min-height: 200px;
+  height: 200px;
+  min-height: 25px; /* Hauteur minimale juste un peu plus grande que la hauteur du titre */
   padding: 0;
   border-radius: 5px;
   box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);

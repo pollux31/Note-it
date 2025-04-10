@@ -712,7 +712,7 @@ class NoteItView extends ItemView {
 				
 				// Limites minimales
 				const minWidth = 150;
-				const minHeight = 150;
+				const minHeight = 25; // Juste un peu plus que la hauteur du titre (environ 22px)
 				
 				if (newWidth < minWidth) {
 					if (position.includes('w')) {

@@ -472,7 +472,7 @@ var NoteItView = class extends import_obsidian.ItemView {
           newTop = startTop + (e.clientY - startY);
         }
         const minWidth = 150;
-        const minHeight = 150;
+        const minHeight = 25;
         if (newWidth < minWidth) {
           if (position.includes("w")) {
             newLeft = startLeft + startWidth - minWidth;
