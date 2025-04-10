@@ -1,0 +1,10 @@
+# Dépendances
+node_modules/
+
+# Fichiers de build
+*.js.map
+
+# Fichiers temporaires
+.DS_Store
+.tmp
+*.log

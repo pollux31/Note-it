@@ -1,0 +1,10 @@
+{
+  "id": "note-it",
+  "name": "Note-it",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Gérer des notes de type post-it dans vos pages Obsidian",
+  "author": "Utilisateur Obsidian",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}
